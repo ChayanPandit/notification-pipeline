@@ -1,0 +1,39 @@
+spring:
+  application:
+    name: notification-pipeline
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/notification_pipeline
+    username: notif_user
+    password: notif_pass
+
+  jpa:
+    hibernate:
+      ddl-auto: validate        # Flyway owns the schema, not Hibernate
+    show-sql: false
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+  kafka:
+    bootstrap-servers: localhost:9092
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+    consumer:
+      group-id: notification-pipeline
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: "*"
+
+server:
+  port: 8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
