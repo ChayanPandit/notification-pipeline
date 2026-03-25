@@ -5,6 +5,7 @@ import com.notifpipeline.domain.model.*
 import com.notifpipeline.domain.repository.DeliveryAttemptRepository
 import com.notifpipeline.domain.repository.DeliveryAuditLogRepository
 import com.notifpipeline.messaging.model.NotificationEvent
+import com.notifpipeline.observability.NotificationMetrics
 import org.apache.kafka.clients.consumer.ConsumerRecord
 import org.slf4j.LoggerFactory
 import org.springframework.kafka.annotation.KafkaListener
@@ -17,7 +18,8 @@ class WebhookDeliveryWorker(
     private val webhookService: WebhookDeliveryService,
     private val attemptRepository: DeliveryAttemptRepository,
     private val auditRepository: DeliveryAuditLogRepository,
-    private val retryPublisher: RetryPublisher
+    private val retryPublisher: RetryPublisher,
+    private val metrics: NotificationMetrics
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
     private val channel = DeliveryChannel.WEBHOOK
@@ -72,6 +74,9 @@ class WebhookDeliveryWorker(
             ))
 
             ack.acknowledge()
+            metrics.incrementDeliverySuccess(channel)
+            metrics.recordDeliveryDuration(channel, duration)
+
             log.info("[WEBHOOK] Delivered ${event.notificationId} in ${duration}ms")
 
         } catch (ex: Exception) {
@@ -94,6 +99,14 @@ class WebhookDeliveryWorker(
             ))
 
             ack.acknowledge()
+            metrics.incrementDeliveryFailure(channel)
+            metrics.recordDeliveryDuration(channel, duration)
+            if (isDeadLettered) {
+                metrics.incrementDeadLettered(channel)
+            } else {
+                metrics.incrementRetry(channel, attemptNumber)
+            }
+
             log.warn("[WEBHOOK] Failed attempt #$attemptNumber for ${event.notificationId}, sent to $targetTopic")
         }
     }

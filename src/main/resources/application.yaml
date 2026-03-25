@@ -37,3 +37,10 @@ management:
     web:
       exposure:
         include: health,info,prometheus,metrics
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+    distribution:
+      percentiles-histogram:
+        "[notifications.delivery.duration]": true
