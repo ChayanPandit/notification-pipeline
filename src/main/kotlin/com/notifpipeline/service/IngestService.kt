@@ -7,6 +7,7 @@ import com.notifpipeline.domain.repository.IdempotencyKeyRepository
 import com.notifpipeline.domain.repository.NotificationRepository
 import com.notifpipeline.messaging.KafkaTopics
 import com.notifpipeline.messaging.model.NotificationEvent
+import com.notifpipeline.observability.NotificationMetrics
 import org.slf4j.LoggerFactory
 import org.springframework.kafka.core.KafkaTemplate
 import org.springframework.stereotype.Service
@@ -17,7 +18,8 @@ import java.util.UUID
 class IngestService(
     private val notificationRepository: NotificationRepository,
     private val idempotencyKeyRepository: IdempotencyKeyRepository,
-    private val kafkaTemplate: KafkaTemplate<String, NotificationEvent>
+    private val kafkaTemplate: KafkaTemplate<String, NotificationEvent>,
+    private val metrics: NotificationMetrics
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -27,6 +29,7 @@ class IngestService(
         // 1. Idempotency check
         val existing = idempotencyKeyRepository.findById(idempotencyKey)
         if (existing.isPresent) {
+            metrics.incrementDuplicateRejected()
             log.info("Duplicate request detected for idempotency key: $idempotencyKey")
             return IngestResult.Duplicate(existing.get().notificationId)
         }
@@ -67,6 +70,7 @@ class IngestService(
             }
 
         log.info("Ingested notification ${notification.id} for recipient ${request.recipientId}")
+        metrics.incrementEventsIngested()
         return IngestResult.Accepted(notification.id)
     }
 }
