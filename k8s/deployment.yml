@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notification-pipeline
+  namespace: notification-pipeline
+  labels:
+    app: notification-pipeline
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: notification-pipeline
+  template:
+    metadata:
+      labels:
+        app: notification-pipeline
+    spec:
+      containers:
+        - name: notification-pipeline
+          image: notification-pipeline:latest
+          imagePullPolicy: Never        # use local image loaded via kind
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: notification-pipeline-config
+            - secretRef:
+                name: notification-pipeline-secret
+          env:
+            - name: JAVA_OPTS
+              value: "-Duser.timezone=Asia/Kolkata"
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8080
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8080
+            # Spring context + DB/Kafka init can take > 2 minutes locally; don't let liveness kill during boot.
+            periodSeconds: 10
+            failureThreshold: 30   # 5 minutes max startup time
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            failureThreshold: 5
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi

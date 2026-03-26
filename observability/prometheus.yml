@@ -5,6 +5,7 @@ scrape_configs:
   - job_name: 'notification-pipeline'
     metrics_path: '/actuator/prometheus'
     static_configs:
-      - targets: ['host.docker.internal:8080']
-        # host.docker.internal lets the container reach your localhost
-        # where Spring Boot is running
+      # Support both modes:
+      # - local run: Spring Boot on host port 8080
+      # - kind/k8s: ingress exposed on host port 8081 (k8s/kind-config.yml extraPortMappings)
+      - targets: ['host.docker.internal:8080', 'host.docker.internal:8081']
