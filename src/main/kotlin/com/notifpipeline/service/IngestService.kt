@@ -3,13 +3,13 @@ package com.notifpipeline.service
 import com.notifpipeline.api.dto.IngestRequest
 import com.notifpipeline.domain.model.IdempotencyKey
 import com.notifpipeline.domain.model.Notification
+import com.notifpipeline.domain.model.OutboxEvent
 import com.notifpipeline.domain.repository.IdempotencyKeyRepository
 import com.notifpipeline.domain.repository.NotificationRepository
+import com.notifpipeline.domain.repository.OutboxEventRepository
 import com.notifpipeline.messaging.KafkaTopics
-import com.notifpipeline.messaging.model.NotificationEvent
 import com.notifpipeline.observability.NotificationMetrics
 import org.slf4j.LoggerFactory
-import org.springframework.kafka.core.KafkaTemplate
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.util.UUID
@@ -18,7 +18,7 @@ import java.util.UUID
 class IngestService(
     private val notificationRepository: NotificationRepository,
     private val idempotencyKeyRepository: IdempotencyKeyRepository,
-    private val kafkaTemplate: KafkaTemplate<String, NotificationEvent>,
+    private val outboxEventRepository: OutboxEventRepository,
     private val metrics: NotificationMetrics
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
@@ -51,25 +51,24 @@ class IngestService(
             )
         )
 
-        // 3. Publish to Kafka
-        val event = NotificationEvent(
-            notificationId = notification.id,
-            idempotencyKey = idempotencyKey,
-            eventType = request.eventType,
-            recipientId = request.recipientId,
-            payload = request.payload
+        outboxEventRepository.save(
+            OutboxEvent(
+                aggregateType = "notification",
+                aggregateId = notification.id,
+                topic = KafkaTopics.INBOUND,
+                messageKey = notification.recipientId,
+                eventType = request.eventType,
+                payload = mapOf(
+                    "notificationId" to notification.id.toString(),
+                    "idempotencyKey" to idempotencyKey,
+                    "eventType" to request.eventType,
+                    "recipientId" to request.recipientId,
+                    "payload" to request.payload
+                )
+            )
         )
 
-        kafkaTemplate.send(KafkaTopics.INBOUND, notification.recipientId, event)
-            .whenComplete { result, ex ->
-                if (ex != null) {
-                    log.error("Failed to publish event ${notification.id} to Kafka", ex)
-                } else {
-                    log.info("Published event ${notification.id} to partition ${result.recordMetadata.partition()}")
-                }
-            }
-
-        log.info("Ingested notification ${notification.id} for recipient ${request.recipientId}")
+        log.info("Ingested notification ${notification.id} for recipient ${request.recipientId} and queued outbox event")
         metrics.incrementEventsIngested()
         return IngestResult.Accepted(notification.id)
     }
