@@ -10,4 +10,10 @@ interface DeliveryAttemptRepository : JpaRepository<DeliveryAttempt, UUID> {
 
     @Query("SELECT COALESCE(MAX(a.attemptNumber), 0) FROM DeliveryAttempt a WHERE a.notificationId = :notificationId AND a.channel = :channel")
     fun findMaxAttemptNumber(notificationId: UUID, channel: DeliveryChannel): Int
+
+    fun findByNotificationIdAndChannelAndAttemptNumber(
+        notificationId: UUID,
+        channel: DeliveryChannel,
+        attemptNumber: Int
+    ): DeliveryAttempt?
 }
