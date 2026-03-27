@@ -29,6 +29,13 @@ class RetryPublisher(
         return targetTopic
     }
 
+    fun publishToDlq(channel: DeliveryChannel, event: NotificationEvent): String {
+        val targetTopic = RetryRouting.retryTopic(channel, Int.MAX_VALUE)
+        kafkaTemplate.send(targetTopic, event.recipientId, event.copy(nextAttemptAt = null))
+        log.info("Published event ${event.notificationId} to DLQ $targetTopic for $channel")
+        return targetTopic
+    }
+
     fun isDlq(topic: String): Boolean =
         topic.startsWith("notifications.dlq")
 }

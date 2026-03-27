@@ -32,6 +32,14 @@ spring:
 server:
   port: 8080
 
+webhook:
+  delivery:
+    default-url: http://localhost:8080/api/v1/webhook-sink
+    secret: dev-webhook-secret
+    connect-timeout-ms: 2000
+    read-timeout-ms: 3000
+    user-agent: notification-pipeline/webhook
+
 management:
   endpoints:
     web:

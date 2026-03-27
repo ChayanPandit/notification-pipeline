@@ -1,6 +1,7 @@
 package com.notifpipeline.service
 
 import com.notifpipeline.delivery.NotificationChannel
+import com.notifpipeline.delivery.DeliveryFailureException
 import com.notifpipeline.domain.model.AuditEvent
 import com.notifpipeline.domain.model.DeliveryAttempt
 import com.notifpipeline.domain.model.DeliveryAuditLog
@@ -88,7 +89,12 @@ class ChannelDeliveryService(
             metrics.recordDeliveryDuration(channel, duration)
         } catch (ex: Exception) {
             val duration = System.currentTimeMillis() - startTime
-            val targetTopic = retryPublisher.publishForRetryOrDlq(channel, event, attemptNumber)
+            val failure = ex as? DeliveryFailureException
+            val targetTopic = if (failure?.retryable == false) {
+                retryPublisher.publishToDlq(channel, event)
+            } else {
+                retryPublisher.publishForRetryOrDlq(channel, event, attemptNumber)
+            }
             val isDeadLettered = retryPublisher.isDlq(targetTopic)
 
             attempt.status = if (isDeadLettered) DeliveryStatus.DEAD_LETTERED else DeliveryStatus.FAILED
@@ -112,6 +118,7 @@ class ChannelDeliveryService(
                         "error" to (ex.message ?: "unknown"),
                         "nextTopic" to targetTopic
                     )
+                        .plus(failure?.metadata ?: emptyMap())
                 )
             )
 
