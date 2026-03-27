@@ -42,7 +42,7 @@ Channel Workers
   |
   +--> success
   |
-  +--> retry topic -> retry relay -> delivery topic
+  +--> retry topic -> scheduled_retries -> retry release scheduler -> delivery topic
   |
   +--> DLQ
 ```
@@ -57,7 +57,9 @@ Channel Workers
 6. Each channel worker consumes its delivery topic and checks `channel_deliveries` before invoking the provider.
 7. If the channel was already delivered, the worker skips the external send and acknowledges the Kafka message.
 8. If the channel was not yet delivered, the worker performs the send and records attempt and audit state.
-9. Failures are either retried through tiered retry topics or sent to DLQ.
+9. Failures are either sent to a channel-specific retry topic with a due timestamp or sent directly to DLQ.
+10. Retry-topic consumers store due retries in `scheduled_retries`.
+11. A scheduled retry release job republishes due retries back to the correct delivery topic.
 
 ## Delivery Guarantees
 
@@ -100,6 +102,10 @@ Stores pending Kafka publishes so DB commit and event publication are decoupled 
 ### `channel_deliveries`
 
 Stores current per-channel delivery state for `(notification_id, channel)`.
+
+### `scheduled_retries`
+
+Stores due retries after they are consumed from retry topics and before they are re-released to delivery topics.
 
 ### `delivery_attempts`
 
@@ -183,8 +189,9 @@ Append-only timeline of delivery events such as `ATTEMPT_STARTED`, `RETRIED`, an
 Notes:
 
 - Delay is carried in the message as `nextAttemptAt`
-- Retry topics are consumed by relay workers, not directly by the channel workers
-- Relay workers forward the event back to the delivery topic only when the retry is due
+- Retry topics are consumed by retry relay workers, not directly by the channel workers
+- Relay workers persist due retries into `scheduled_retries`
+- A scheduled release job republishes due retries back to the delivery topic
 
 ## DLQ Design
 
@@ -223,6 +230,26 @@ Local testing is supported through:
 - `POST /api/v1/webhook-sink/{recipientId}`
 
 Use `?status=503` to simulate retryable failures and `?status=400` for terminal failures.
+
+## Broker Abstraction
+
+The publish path uses logical broker destinations instead of hardcoded Kafka topics in the application layer.
+
+Key pieces:
+
+- `BrokerDestination`
+- `MessagePublisher`
+- `KafkaMessagePublisher`
+- `KafkaBrokerDestinationResolver`
+
+This means the application publishes to logical destinations such as `INBOUND` or `DELIVERY_WEBHOOK`, while Kafka-specific topic name resolution is isolated behind the Kafka implementation.
+
+Current state:
+
+- publish path is abstracted
+- consume path is still Kafka-specific through `@KafkaListener`
+
+That is enough to support a credible Kafka -> SQS/SNS swap story with limited business-logic change, while keeping the codebase practical for this project.
 
 ## Running Locally
 
@@ -274,6 +301,7 @@ Invoke-RestMethod `
 select * from notifications order by created_at desc;
 select * from outbox_events order by created_at desc;
 select * from channel_deliveries order by created_at desc;
+select * from scheduled_retries order by created_at desc;
 select * from delivery_attempts order by created_at desc;
 select * from delivery_audit_log order by occurred_at desc;
 ```
@@ -293,7 +321,7 @@ Planned target scenario:
 
 - Move from single-broker local Kafka to a multi-broker managed setup
 - Increase partition counts per topic based on per-channel throughput
-- Replace simple retry relay behavior with a cleaner delayed-release scheduler or broker-native delay mechanism
+- Move scheduled retry release to a more scalable worker or broker-native delay mechanism
 - Add Redis as a fast-path dedupe cache while keeping Postgres as the durable delivery truth
 - Separate webhook delivery into its own deployable worker pool if webhook traffic dominates
 - Add topic provisioning through infra tooling instead of a startup shell script
@@ -307,17 +335,18 @@ Implemented:
 - API idempotency
 - transactional outbox
 - Kafka fan-out
+- publish-side broker abstraction
 - manual offset commit consumers
 - consumer-side idempotency
 - retry topics and DLQ
-- retry-delay relay
+- scheduled retry release via `scheduled_retries`
 - webhook HTTP delivery with request signing
 - Docker Compose for local infra
 - Prometheus and Grafana containers
 
 Still worth doing later:
 
-- tighter retry release implementation
+- email/push provider realism
 - stronger observability dashboards and alerts
 - exact k6 target scenario
 - README diagrams as images
