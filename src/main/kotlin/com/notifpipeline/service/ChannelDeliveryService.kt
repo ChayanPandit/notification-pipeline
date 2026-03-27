@@ -17,6 +17,7 @@ import java.time.Instant
 @Service
 class ChannelDeliveryService(
     notificationChannels: List<NotificationChannel>,
+    private val idempotencyService: ChannelDeliveryIdempotencyService,
     private val attemptRepository: DeliveryAttemptRepository,
     private val auditRepository: DeliveryAuditLogRepository,
     private val retryPublisher: RetryPublisher,
@@ -27,9 +28,24 @@ class ChannelDeliveryService(
     fun deliver(channel: DeliveryChannel, event: NotificationEvent) {
         val handler = channelsByType[channel]
             ?: error("No NotificationChannel registered for $channel")
+        val claim = idempotencyService.claimForDelivery(event.notificationId, channel)
+
+        if (claim is DeliveryClaimResult.AlreadyDelivered) {
+            auditRepository.save(
+                DeliveryAuditLog(
+                    notificationId = event.notificationId,
+                    channel = channel,
+                    event = AuditEvent.DELIVERED,
+                    attemptNumber = claim.delivery.lastAttemptNumber,
+                    metadata = mapOf("idempotentSkip" to true)
+                )
+            )
+            return
+        }
 
         val startTime = System.currentTimeMillis()
         val attemptNumber = attemptRepository.findMaxAttemptNumber(event.notificationId, channel) + 1
+        val channelDelivery = (claim as DeliveryClaimResult.Claimed).delivery
 
         val attempt = attemptRepository.save(
             DeliveryAttempt(
@@ -56,6 +72,7 @@ class ChannelDeliveryService(
             attempt.durationMs = duration
             attempt.updatedAt = Instant.now()
             attemptRepository.save(attempt)
+            idempotencyService.markDelivered(channelDelivery, attemptNumber)
 
             auditRepository.save(
                 DeliveryAuditLog(
@@ -79,6 +96,11 @@ class ChannelDeliveryService(
             attempt.durationMs = duration
             attempt.updatedAt = Instant.now()
             attemptRepository.save(attempt)
+            if (isDeadLettered) {
+                idempotencyService.markDeadLettered(channelDelivery, attemptNumber, ex.message)
+            } else {
+                idempotencyService.markFailed(channelDelivery, attemptNumber, ex.message)
+            }
 
             auditRepository.save(
                 DeliveryAuditLog(
