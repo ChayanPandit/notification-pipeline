@@ -5,10 +5,12 @@ import com.notifpipeline.messaging.model.NotificationEvent
 import org.slf4j.LoggerFactory
 import org.springframework.kafka.core.KafkaTemplate
 import org.springframework.stereotype.Component
+import java.time.Instant
 
 @Component
 class RetryPublisher(
-    private val kafkaTemplate: KafkaTemplate<String, NotificationEvent>
+    private val kafkaTemplate: KafkaTemplate<String, NotificationEvent>,
+    private val retryPolicy: RetryPolicy
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -18,28 +20,11 @@ class RetryPublisher(
         event: NotificationEvent,
         attemptNumber: Int
     ): String {
-        val targetTopic = when (channel) {
-            DeliveryChannel.EMAIL -> when (attemptNumber) {
-                1 -> KafkaTopics.RETRY_EMAIL_TIER1
-                2 -> KafkaTopics.RETRY_EMAIL_TIER2
-                3 -> KafkaTopics.RETRY_EMAIL_TIER3
-                else -> KafkaTopics.DLQ_EMAIL
-            }
-            DeliveryChannel.PUSH -> when (attemptNumber) {
-                1 -> KafkaTopics.RETRY_PUSH_TIER1
-                2 -> KafkaTopics.RETRY_PUSH_TIER2
-                3 -> KafkaTopics.RETRY_PUSH_TIER3
-                else -> KafkaTopics.DLQ_PUSH
-            }
-            DeliveryChannel.WEBHOOK -> when (attemptNumber) {
-                1 -> KafkaTopics.RETRY_WEBHOOK_TIER1
-                2 -> KafkaTopics.RETRY_WEBHOOK_TIER2
-                3 -> KafkaTopics.RETRY_WEBHOOK_TIER3
-                else -> KafkaTopics.DLQ_WEBHOOK
-            }
-        }
+        val targetTopic = RetryRouting.retryTopic(channel, attemptNumber)
+        val nextAttemptAt = if (isDlq(targetTopic)) null else retryPolicy.nextAttemptAt(attemptNumber, Instant.now())
+        val retryEvent = event.copy(nextAttemptAt = nextAttemptAt)
 
-        kafkaTemplate.send(targetTopic, event.recipientId, event)
+        kafkaTemplate.send(targetTopic, retryEvent.recipientId, retryEvent)
         log.info("Published event ${event.notificationId} to $targetTopic for $channel (attempt $attemptNumber)")
         return targetTopic
     }

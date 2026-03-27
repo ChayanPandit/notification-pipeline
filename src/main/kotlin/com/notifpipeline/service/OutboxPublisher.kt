@@ -39,7 +39,8 @@ class OutboxPublisher(
             idempotencyKey = outboxEvent.payload["idempotencyKey"] as String,
             eventType = outboxEvent.payload["eventType"] as String,
             recipientId = outboxEvent.payload["recipientId"] as String,
-            payload = notificationPayload
+            payload = notificationPayload,
+            nextAttemptAt = null
         )
 
         try {

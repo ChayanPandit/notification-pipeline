@@ -18,10 +18,7 @@ class WebhookDeliveryWorker(
 
     @KafkaListener(
         topics = [
-            KafkaTopics.DELIVERY_WEBHOOK,
-            KafkaTopics.RETRY_WEBHOOK_TIER1,
-            KafkaTopics.RETRY_WEBHOOK_TIER2,
-            KafkaTopics.RETRY_WEBHOOK_TIER3
+            KafkaTopics.DELIVERY_WEBHOOK
         ],
         groupId = "webhook-delivery-worker",
         containerFactory = "kafkaListenerContainerFactory"
