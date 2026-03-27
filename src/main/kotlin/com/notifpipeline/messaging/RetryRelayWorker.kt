@@ -56,15 +56,15 @@ class RetryRelayWorker(
 
     private fun relay(channel: DeliveryChannel, record: ConsumerRecord<String, NotificationEvent>, ack: Acknowledgment) {
         val event = record.value()
-        val deliveryTopic = RetryRouting.deliveryTopic(channel)
+        val deliveryDestination = RetryRouting.deliveryDestination(channel)
         scheduledRetryService.schedule(
             channel = channel,
             sourceTopic = record.topic(),
-            deliveryTopic = deliveryTopic,
+            deliveryTopic = deliveryDestination,
             messageKey = event.recipientId,
             event = event
         )
         ack.acknowledge()
-        log.info("Scheduled retry event {} for {} from {} dueAt={}", event.notificationId, channel, record.topic(), event.nextAttemptAt)
+        log.info("Scheduled retry event {} for {} from {} to {} dueAt={}", event.notificationId, channel, record.topic(), deliveryDestination, event.nextAttemptAt)
     }
 }

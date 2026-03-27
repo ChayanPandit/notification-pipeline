@@ -3,7 +3,8 @@ package com.notifpipeline.service
 import com.notifpipeline.domain.model.DeliveryChannel
 import com.notifpipeline.domain.model.DeliveryStatus
 import com.notifpipeline.domain.repository.DeliveryAttemptRepository
-import com.notifpipeline.messaging.KafkaTopics
+import com.notifpipeline.messaging.BrokerDestination
+import com.notifpipeline.messaging.MessagePublisher
 import com.notifpipeline.messaging.model.NotificationEvent
 import org.apache.kafka.clients.consumer.ConsumerConfig
 import org.apache.kafka.clients.consumer.KafkaConsumer
@@ -11,7 +12,6 @@ import org.apache.kafka.common.TopicPartition
 import org.apache.kafka.common.serialization.StringDeserializer
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
-import org.springframework.kafka.core.KafkaTemplate
 import org.springframework.kafka.support.serializer.JsonDeserializer
 import org.springframework.stereotype.Service
 import java.time.Duration
@@ -19,7 +19,7 @@ import java.time.Instant
 
 @Service
 class DlqReplayService(
-    private val kafkaTemplate: KafkaTemplate<String, NotificationEvent>,
+    private val messagePublisher: MessagePublisher,
     private val attemptRepository: DeliveryAttemptRepository,
     @Value("\${spring.kafka.bootstrap-servers}") private val bootstrapServers: String
 ) {
@@ -93,7 +93,7 @@ class DlqReplayService(
                     val event = record.value()
                     try {
                         // 1. Re-publish to delivery topic
-                        kafkaTemplate.send(deliveryTopic, event.recipientId, event).get()
+                        messagePublisher.publishAndWait(deliveryDestinationFor(channel), event.recipientId, event)
 
                         // 2. Reset the latest attempt status so the worker
                         //    treats this as a fresh attempt
@@ -167,15 +167,17 @@ class DlqReplayService(
     }
 
     private fun dlqTopicFor(channel: DeliveryChannel) = when (channel) {
-        DeliveryChannel.EMAIL   -> KafkaTopics.DLQ_EMAIL
-        DeliveryChannel.PUSH    -> KafkaTopics.DLQ_PUSH
-        DeliveryChannel.WEBHOOK -> KafkaTopics.DLQ_WEBHOOK
+        DeliveryChannel.EMAIL   -> "notifications.dlq.email"
+        DeliveryChannel.PUSH    -> "notifications.dlq.push"
+        DeliveryChannel.WEBHOOK -> "notifications.dlq.webhook"
     }
 
-    private fun deliveryTopicFor(channel: DeliveryChannel) = when (channel) {
-        DeliveryChannel.EMAIL   -> KafkaTopics.DELIVERY_EMAIL
-        DeliveryChannel.PUSH    -> KafkaTopics.DELIVERY_PUSH
-        DeliveryChannel.WEBHOOK -> KafkaTopics.DELIVERY_WEBHOOK
+    private fun deliveryTopicFor(channel: DeliveryChannel) = deliveryDestinationFor(channel).name
+
+    private fun deliveryDestinationFor(channel: DeliveryChannel) = when (channel) {
+        DeliveryChannel.EMAIL   -> BrokerDestination.DELIVERY_EMAIL
+        DeliveryChannel.PUSH    -> BrokerDestination.DELIVERY_PUSH
+        DeliveryChannel.WEBHOOK -> BrokerDestination.DELIVERY_WEBHOOK
     }
 }
 

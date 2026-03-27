@@ -5,13 +5,12 @@ import com.notifpipeline.messaging.model.NotificationEvent
 import org.apache.kafka.clients.consumer.ConsumerRecord
 import org.slf4j.LoggerFactory
 import org.springframework.kafka.annotation.KafkaListener
-import org.springframework.kafka.core.KafkaTemplate
 import org.springframework.kafka.support.Acknowledgment
 import org.springframework.stereotype.Component
 
 @Component
 class EventRouterConsumer(
-    private val kafkaTemplate: KafkaTemplate<String, NotificationEvent>,
+    private val messagePublisher: MessagePublisher,
     private val subscriptionConfig: ChannelSubscriptionConfig
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
@@ -31,9 +30,9 @@ class EventRouterConsumer(
         try {
             val channels = subscriptionConfig.resolveChannels(event.eventType)
 
-            channels.forEach { topic ->
-                kafkaTemplate.send(topic, event.recipientId, event)
-                log.info("Fanned out ${event.notificationId} to $topic")
+            channels.forEach { destination ->
+                messagePublisher.publish(destination, event.recipientId, event)
+                log.info("Fanned out ${event.notificationId} to $destination")
             }
 
             ack.acknowledge()  // only ack after all fan-outs published
