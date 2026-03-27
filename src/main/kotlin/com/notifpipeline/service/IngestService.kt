@@ -7,7 +7,7 @@ import com.notifpipeline.domain.model.OutboxEvent
 import com.notifpipeline.domain.repository.IdempotencyKeyRepository
 import com.notifpipeline.domain.repository.NotificationRepository
 import com.notifpipeline.domain.repository.OutboxEventRepository
-import com.notifpipeline.messaging.KafkaTopics
+import com.notifpipeline.messaging.BrokerDestination
 import com.notifpipeline.observability.NotificationMetrics
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
@@ -55,7 +55,7 @@ class IngestService(
             OutboxEvent(
                 aggregateType = "notification",
                 aggregateId = notification.id,
-                topic = KafkaTopics.INBOUND,
+                topic = BrokerDestination.INBOUND.name,
                 messageKey = notification.recipientId,
                 eventType = request.eventType,
                 payload = mapOf(

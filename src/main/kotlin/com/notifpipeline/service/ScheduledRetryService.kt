@@ -4,9 +4,10 @@ import com.notifpipeline.domain.model.DeliveryChannel
 import com.notifpipeline.domain.model.ScheduledRetry
 import com.notifpipeline.domain.model.ScheduledRetryStatus
 import com.notifpipeline.domain.repository.ScheduledRetryRepository
+import com.notifpipeline.messaging.BrokerDestination
+import com.notifpipeline.messaging.MessagePublisher
 import com.notifpipeline.messaging.model.NotificationEvent
 import org.slf4j.LoggerFactory
-import org.springframework.kafka.core.KafkaTemplate
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -15,7 +16,7 @@ import java.time.Instant
 @Service
 class ScheduledRetryService(
     private val scheduledRetryRepository: ScheduledRetryRepository,
-    private val kafkaTemplate: KafkaTemplate<String, NotificationEvent>
+    private val messagePublisher: MessagePublisher
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -23,7 +24,7 @@ class ScheduledRetryService(
     fun schedule(
         channel: DeliveryChannel,
         sourceTopic: String,
-        deliveryTopic: String,
+        deliveryTopic: BrokerDestination,
         messageKey: String,
         event: NotificationEvent
     ) {
@@ -33,7 +34,7 @@ class ScheduledRetryService(
                 notificationId = event.notificationId,
                 channel = channel,
                 sourceTopic = sourceTopic,
-                deliveryTopic = deliveryTopic,
+                deliveryTopic = deliveryTopic.name,
                 messageKey = messageKey,
                 dueAt = dueAt,
                 eventPayload = event
@@ -58,11 +59,11 @@ class ScheduledRetryService(
         }
 
         try {
-            kafkaTemplate.send(
-                retry.deliveryTopic,
+            messagePublisher.publishAndWait(
+                BrokerDestination.valueOf(retry.deliveryTopic),
                 retry.messageKey,
                 retry.eventPayload.copy(nextAttemptAt = null)
-            ).get()
+            )
             retry.status = ScheduledRetryStatus.PUBLISHED
             retry.publishedAt = Instant.now()
             retry.lastError = null

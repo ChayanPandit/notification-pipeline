@@ -2,9 +2,10 @@ package com.notifpipeline.service
 
 import com.notifpipeline.domain.model.OutboxStatus
 import com.notifpipeline.domain.repository.OutboxEventRepository
+import com.notifpipeline.messaging.BrokerDestination
+import com.notifpipeline.messaging.MessagePublisher
 import com.notifpipeline.messaging.model.NotificationEvent
 import org.slf4j.LoggerFactory
-import org.springframework.kafka.core.KafkaTemplate
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -12,7 +13,7 @@ import org.springframework.transaction.annotation.Transactional
 @Service
 class OutboxPublisher(
     private val outboxEventRepository: OutboxEventRepository,
-    private val kafkaTemplate: KafkaTemplate<String, NotificationEvent>
+    private val messagePublisher: MessagePublisher
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -44,7 +45,8 @@ class OutboxPublisher(
         )
 
         try {
-            kafkaTemplate.send(outboxEvent.topic, outboxEvent.messageKey, event).get()
+            val destination = BrokerDestination.valueOf(outboxEvent.topic)
+            messagePublisher.publishAndWait(destination, outboxEvent.messageKey, event)
             outboxEvent.status = OutboxStatus.PUBLISHED
             outboxEvent.publishedAt = java.time.Instant.now()
             outboxEvent.lastError = null
@@ -57,7 +59,7 @@ class OutboxPublisher(
             outboxEvent.attemptCount += 1
             outboxEvent.updatedAt = java.time.Instant.now()
             outboxEventRepository.save(outboxEvent)
-            log.error("Failed to publish outbox event ${outboxEvent.id} to ${outboxEvent.topic}", ex)
+            log.error("Failed to publish outbox event ${outboxEvent.id} to destination ${outboxEvent.topic}", ex)
         }
     }
 }

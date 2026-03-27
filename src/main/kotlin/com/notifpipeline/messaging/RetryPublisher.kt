@@ -9,7 +9,7 @@ import java.time.Instant
 
 @Component
 class RetryPublisher(
-    private val kafkaTemplate: KafkaTemplate<String, NotificationEvent>,
+    private val messagePublisher: MessagePublisher,
     private val retryPolicy: RetryPolicy
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
@@ -19,23 +19,23 @@ class RetryPublisher(
         channel: DeliveryChannel,
         event: NotificationEvent,
         attemptNumber: Int
-    ): String {
-        val targetTopic = RetryRouting.retryTopic(channel, attemptNumber)
-        val nextAttemptAt = if (isDlq(targetTopic)) null else retryPolicy.nextAttemptAt(attemptNumber, Instant.now())
+    ): BrokerDestination {
+        val targetDestination = RetryRouting.retryDestination(channel, attemptNumber)
+        val nextAttemptAt = if (isDlq(targetDestination)) null else retryPolicy.nextAttemptAt(attemptNumber, Instant.now())
         val retryEvent = event.copy(nextAttemptAt = nextAttemptAt)
 
-        kafkaTemplate.send(targetTopic, retryEvent.recipientId, retryEvent)
-        log.info("Published event ${event.notificationId} to $targetTopic for $channel (attempt $attemptNumber)")
-        return targetTopic
+        messagePublisher.publish(targetDestination, retryEvent.recipientId, retryEvent)
+        log.info("Published event ${event.notificationId} to $targetDestination for $channel (attempt $attemptNumber)")
+        return targetDestination
     }
 
-    fun publishToDlq(channel: DeliveryChannel, event: NotificationEvent): String {
-        val targetTopic = RetryRouting.retryTopic(channel, Int.MAX_VALUE)
-        kafkaTemplate.send(targetTopic, event.recipientId, event.copy(nextAttemptAt = null))
-        log.info("Published event ${event.notificationId} to DLQ $targetTopic for $channel")
-        return targetTopic
+    fun publishToDlq(channel: DeliveryChannel, event: NotificationEvent): BrokerDestination {
+        val targetDestination = RetryRouting.retryDestination(channel, Int.MAX_VALUE)
+        messagePublisher.publish(targetDestination, event.recipientId, event.copy(nextAttemptAt = null))
+        log.info("Published event ${event.notificationId} to DLQ $targetDestination for $channel")
+        return targetDestination
     }
 
-    fun isDlq(topic: String): Boolean =
-        topic.startsWith("notifications.dlq")
+    fun isDlq(destination: BrokerDestination): Boolean =
+        destination.name.startsWith("DLQ_")
 }

@@ -1,0 +1,20 @@
+package com.notifpipeline.messaging
+
+enum class BrokerDestination {
+    INBOUND,
+    DELIVERY_EMAIL,
+    DELIVERY_PUSH,
+    DELIVERY_WEBHOOK,
+    RETRY_EMAIL_TIER1,
+    RETRY_EMAIL_TIER2,
+    RETRY_EMAIL_TIER3,
+    RETRY_PUSH_TIER1,
+    RETRY_PUSH_TIER2,
+    RETRY_PUSH_TIER3,
+    RETRY_WEBHOOK_TIER1,
+    RETRY_WEBHOOK_TIER2,
+    RETRY_WEBHOOK_TIER3,
+    DLQ_EMAIL,
+    DLQ_PUSH,
+    DLQ_WEBHOOK
+}
