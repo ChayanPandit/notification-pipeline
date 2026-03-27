@@ -18,10 +18,7 @@ class EmailDeliveryWorker(
 
     @KafkaListener(
         topics = [
-            KafkaTopics.DELIVERY_EMAIL,
-            KafkaTopics.RETRY_EMAIL_TIER1,
-            KafkaTopics.RETRY_EMAIL_TIER2,
-            KafkaTopics.RETRY_EMAIL_TIER3
+            KafkaTopics.DELIVERY_EMAIL
         ],
         groupId = "email-delivery-worker",
         containerFactory = "kafkaListenerContainerFactory"

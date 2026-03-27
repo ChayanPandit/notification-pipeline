@@ -18,10 +18,7 @@ class PushDeliveryWorker(
 
     @KafkaListener(
         topics = [
-            KafkaTopics.DELIVERY_PUSH,
-            KafkaTopics.RETRY_PUSH_TIER1,
-            KafkaTopics.RETRY_PUSH_TIER2,
-            KafkaTopics.RETRY_PUSH_TIER3
+            KafkaTopics.DELIVERY_PUSH
         ],
         groupId = "push-delivery-worker",
         containerFactory = "kafkaListenerContainerFactory"
