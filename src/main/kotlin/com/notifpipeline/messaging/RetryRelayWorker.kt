@@ -2,18 +2,16 @@ package com.notifpipeline.messaging
 
 import com.notifpipeline.domain.model.DeliveryChannel
 import com.notifpipeline.messaging.model.NotificationEvent
+import com.notifpipeline.service.ScheduledRetryService
 import org.apache.kafka.clients.consumer.ConsumerRecord
 import org.slf4j.LoggerFactory
 import org.springframework.kafka.annotation.KafkaListener
-import org.springframework.kafka.core.KafkaTemplate
 import org.springframework.kafka.support.Acknowledgment
 import org.springframework.stereotype.Component
-import java.time.Duration
-import java.time.Instant
 
 @Component
 class RetryRelayWorker(
-    private val kafkaTemplate: KafkaTemplate<String, NotificationEvent>
+    private val scheduledRetryService: ScheduledRetryService
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -58,25 +56,15 @@ class RetryRelayWorker(
 
     private fun relay(channel: DeliveryChannel, record: ConsumerRecord<String, NotificationEvent>, ack: Acknowledgment) {
         val event = record.value()
-        val dueAt = event.nextAttemptAt
-
-        if (dueAt != null && dueAt.isAfter(Instant.now())) {
-            val sleepMs = Duration.between(Instant.now(), dueAt).toMillis().coerceAtMost(5_000)
-            if (sleepMs > 0) {
-                Thread.sleep(sleepMs)
-            }
-        }
-
-        if (event.nextAttemptAt != null && event.nextAttemptAt.isAfter(Instant.now())) {
-            kafkaTemplate.send(record.topic(), event.recipientId, event).get()
-            ack.acknowledge()
-            return
-        }
-
-        val deliveryEvent = event.copy(nextAttemptAt = null)
         val deliveryTopic = RetryRouting.deliveryTopic(channel)
-        kafkaTemplate.send(deliveryTopic, deliveryEvent.recipientId, deliveryEvent).get()
+        scheduledRetryService.schedule(
+            channel = channel,
+            sourceTopic = record.topic(),
+            deliveryTopic = deliveryTopic,
+            messageKey = event.recipientId,
+            event = event
+        )
         ack.acknowledge()
-        log.info("Released retry event ${event.notificationId} for $channel from ${record.topic()} to $deliveryTopic")
+        log.info("Scheduled retry event {} for {} from {} dueAt={}", event.notificationId, channel, record.topic(), event.nextAttemptAt)
     }
 }
